@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Neon Hands — Gesture Synth</title>
+<style>
+  :root{
+    --pink: #ff2fb3;
+    --pink-soft: #ff8fd6;
+    --pink-dim: #7a1a55;
+    --black: #06050a;
+    --black-2: #0e0c14;
+    --line: #2a1a26;
+    --text: #ffe6f7;
+    --text-dim: #b98fac;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; height:100%; background:var(--black);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    color:var(--text); overflow:hidden;
+  }
+  #app{ position:relative; width:100vw; height:100vh; }
+
+  #video, #overlay{
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    object-fit:cover; transform:scaleX(-1);
+  }
+  #video{ filter: brightness(0.55) saturate(1.1); }
+  #overlay{ pointer-events:none; }
+
+  .vignette{
+    position:absolute; inset:0; pointer-events:none;
+    background:
+      radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.75) 100%),
+      linear-gradient(180deg, rgba(6,5,10,0.85) 0%, transparent 18%, transparent 78%, rgba(6,5,10,0.9) 100%);
+  }
+
+  header{
+    position:absolute; top:0; left:0; right:0; z-index:5;
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 18px 22px;
+  }
+  .brand{
+    display:flex; flex-direction:column; line-height:1.1;
+  }
+  .brand .tag{
+    font-size:11px; letter-spacing:4px; color:var(--pink-soft); font-weight:600;
+  }
+  .brand h1{
+    margin:2px 0 0; font-size:22px; letter-spacing:1px;
+    color:var(--text);
+    text-shadow: 0 0 18px var(--pink), 0 0 2px #fff;
+  }
+
+  .pillbar{ display:flex; gap:10px; }
+  select, button.icon{
+    background: rgba(20,10,18,0.75);
+    border: 1px solid var(--pink-dim);
+    color: var(--text);
+    border-radius: 999px;
+    padding: 9px 16px;
+    font-size: 13px;
+    backdrop-filter: blur(6px);
+    cursor:pointer;
+    outline:none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  select:hover, button.icon:hover{
+    border-color: var(--pink);
+    box-shadow: 0 0 14px rgba(255,47,179,0.35);
+  }
+  button.icon{ width:38px; height:38px; padding:0; display:flex; align-items:center; justify-content:center; font-size:16px; }
+
+  footer{
+    position:absolute; bottom:0; left:0; right:0; z-index:5;
+    display:flex; justify-content:center; gap:14px;
+    padding: 18px 22px 22px;
+  }
+  .meter{
+    background: rgba(14,8,14,0.7);
+    border:1px solid var(--pink-dim);
+    border-radius:14px;
+    padding:10px 16px;
+    min-width:120px;
+    backdrop-filter: blur(6px);
+  }
+  .meter .label{ font-size:10px; letter-spacing:2px; color:var(--text-dim); }
+  .meter .bar{
+    margin-top:6px; height:6px; border-radius:4px; background:#241119; overflow:hidden;
+  }
+  .meter .bar > span{
+    display:block; height:100%; width:0%;
+    background: linear-gradient(90deg, var(--pink-dim), var(--pink));
+    box-shadow: 0 0 10px var(--pink);
+    transition: width .08s linear;
+  }
+  .meter .val{ margin-top:4px; font-size:13px; font-weight:600; color:var(--pink-soft); }
+
+  .chordDisplay{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    z-index:4; text-align:center; pointer-events:none;
+  }
+  .chordDisplay .chord{
+    font-size:64px; font-weight:800; letter-spacing:2px;
+    color:var(--text);
+    text-shadow: 0 0 30px var(--pink), 0 0 70px rgba(255,47,179,0.6);
+    opacity:0; transition: opacity .15s;
+  }
+  .chordDisplay .chord.show{ opacity:1; }
+
+  .status{
+    position:absolute; top:80px; left:50%; transform:translateX(-50%);
+    z-index:5; font-size:13px; color:var(--text-dim);
+    background: rgba(14,8,14,0.6); border:1px solid var(--pink-dim);
+    padding:7px 16px; border-radius:999px; backdrop-filter: blur(6px);
+    display:flex; align-items:center; gap:8px;
+  }
+  .status .dot{ width:8px; height:8px; border-radius:50%; background:#e33; box-shadow:0 0 8px #e33; }
+  .status.ready .dot{ background: var(--pink); box-shadow:0 0 10px var(--pink); }
+
+  #startScreen{
+    position:absolute; inset:0; z-index:20;
+    background: radial-gradient(circle at 50% 30%, #1a0714 0%, #06050a 70%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:20px;
+  }
+  #startScreen .tag{ font-size:12px; letter-spacing:6px; color:var(--pink-soft); margin-bottom:10px; }
+  #startScreen h1{
+    font-size:46px; margin:0 0 12px; color:#fff;
+    text-shadow: 0 0 30px var(--pink), 0 0 90px rgba(255,47,179,0.5);
+  }
+  #startScreen p{ color:var(--text-dim); max-width:420px; margin:0 0 28px; line-height:1.6; font-size:14px;}
+  #startScreen .hands{ font-size:40px; margin-bottom:18px; filter: drop-shadow(0 0 20px var(--pink)); }
+  #startBtn{
+    background: linear-gradient(135deg, var(--pink), #a8106b);
+    border:none; color:#fff; font-weight:700; letter-spacing:1px;
+    padding:16px 40px; border-radius:999px; font-size:15px; cursor:pointer;
+    box-shadow: 0 0 30px rgba(255,47,179,0.55);
+    transition: transform .15s;
+  }
+  #startBtn:hover{ transform:scale(1.05); }
+  #guideBtn2{
+    margin-top:14px; background:none; border:none; color:var(--text-dim);
+    text-decoration:underline; cursor:pointer; font-size:12px;
+  }
+
+  #guide{
+    position:absolute; inset:0; z-index:30; background: rgba(6,5,10,0.92);
+    display:none; align-items:center; justify-content:center; padding:24px;
+    backdrop-filter: blur(4px);
+  }
+  #guide.show{ display:flex; }
+  .guideBox{
+    max-width: 640px; max-height:82vh; overflow-y:auto;
+    background: var(--black-2); border:1px solid var(--pink-dim);
+    border-radius:18px; padding:28px 30px; box-shadow: 0 0 60px rgba(255,47,179,0.15);
+  }
+  .guideBox h2{ margin-top:0; color:var(--pink-soft); letter-spacing:1px; }
+  .guideBox h3{ color:var(--pink); margin-bottom:6px; font-size:15px; }
+  .guideBox p, .guideBox li{ color:var(--text-dim); font-size:13.5px; line-height:1.6; }
+  .guideBox ul{ margin:4px 0 18px; padding-left:20px; }
+  .closeGuide{
+    float:right; background:none; border:1px solid var(--pink-dim); color:var(--text);
+    border-radius:50%; width:32px; height:32px; cursor:pointer; font-size:14px;
+  }
+
+  canvas#hud{ position:absolute; top:0; left:0; width:100%; height:100%; z-index:3; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="overlay"></canvas>
+  <canvas id="hud"></canvas>
+  <div class="vignette"></div>
+
+  <header>
+    <div class="brand">
+      <span class="tag">NEON HANDS</span>
+      <h1>Gesture Synth</h1>
+    </div>
+    <div class="pillbar">
+      <select id="keySelect"></select>
+      <select id="voiceSelect">
+        <option value="warm">Warm Synth</option>
+        <option value="bright">Bright Synth</option>
+        <option value="pluck">Retro Pluck</option>
+        <option value="pad">Airy Pad</option>
+      </select>
+      <button class="icon" id="guideOpenBtn" title="Guide">?</button>
+    </div>
+  </header>
+
+  <div class="status" id="statusPill"><span class="dot"></span><span id="statusText">Waiting for camera…</span></div>
+  <div class="chordDisplay"><div class="chord" id="chordLabel">—</div></div>
+
+  <footer>
+    <div class="meter">
+      <div class="label">VOLUME</div>
+      <div class="bar"><span id="volBar"></span></div>
+      <div class="val" id="volVal">0%</div>
+    </div>
+    <div class="meter">
+      <div class="label">FILTER</div>
+      <div class="bar"><span id="filtBar"></span></div>
+      <div class="val" id="filtVal">0%</div>
+    </div>
+    <div class="meter">
+      <div class="label">OCTAVE</div>
+      <div class="bar"><span id="octBar"></span></div>
+      <div class="val" id="octVal">4</div>
+    </div>
+  </footer>
+
+  <div id="startScreen">
+    <div class="hands">🙌</div>
+    <div class="tag">NEON HANDS</div>
+    <h1>Gesture Synth</h1>
+    <p>An original hand-tracked instrument. Use your left hand to pick a scale degree and mode, and your right hand to shape the chord, octave, filter and volume — all in real time, no keyboard required.</p>
+    <button id="startBtn">🎥 Enable Camera & Play</button>
+    <button id="guideBtn2">How does it work?</button>
+  </div>
+
+  <div id="guide">
+    <div class="guideBox">
+      <button class="closeGuide" id="closeGuideBtn">✕</button>
+      <h2>How to play</h2>
+      <p>Hold both hands up where the camera can see them. Everything is driven by simple gestures — no clicking needed once you start.</p>
+      <h3>Left hand — melody &amp; mode</h3>
+      <ul>
+        <li>Number of fingers up (1–5) picks the scale degree of the chord root.</li>
+        <li>Tilting your left hand inward leans the scale major; outward leans it minor.</li>
+      </ul>
+      <h3>Right hand — chord &amp; expression</h3>
+      <ul>
+        <li>Fingers up (1–4) choose the chord voicing: root triad, 1st inversion, added 7th, or dominant/diminished 7th.</li>
+        <li>Thumb tucked in vs. out shifts the octave up or down.</li>
+        <li>Tilting the right hand changes the filter's brightness.</li>
+        <li>Raising or lowering your right hand controls volume.</li>
+      </ul>
+      <p>Pick a key and synth voice from the top bar any time. This is an original build inspired by gesture-controlled instruments — built from scratch, not a copy of any existing app.</p>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mediapipe/0.4.1633559619/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mediapipe/0.3.1620248257/camera_utils.js" crossorigin="anonymous"></script>
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------- Music theory ---------------- */
+  const NOTE_NAMES = ["C","C#/Db","D","D#/Eb","E","F","F#/Gb","G","G#/Ab","A","A#/Bb","B"];
+  const MAJOR_STEPS = [0,2,4,5,7,9,11];
+  const MINOR_STEPS = [0,2,3,5,7,8,10];
+  const NOTE_TO_MIDI_BASE = 60; // C4
+
+  const keySelect = document.getElementById('keySelect');
+  NOTE_NAMES.forEach((n,i)=>{
+    const opt = document.createElement('option');
+    opt.value = i; opt.textContent = n;
+    if(i===0) opt.selected = true;
+    keySelect.appendChild(opt);
+  });
+
+  function scaleDegreeToSemitone(rootOffset, degreeIndex, mode){
+    const steps = mode === 'major' ? MAJOR_STEPS : MINOR_STEPS;
+    const octShift = Math.floor(degreeIndex/7);
+    const idx = ((degreeIndex%7)+7)%7;
+    return rootOffset + steps[idx] + 12*octShift;
+  }
+
+  function midiToFreq(midi){ return 440 * Math.pow(2, (midi-69)/12); }
+
+  /* ---------------- Audio engine ---------------- */
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  let actx = null;
+  let masterGain, filterNode, compressor;
+  let voices = {}; // id -> {osc, gain}
+  const MAX_VOICES = 4;
+
+  function initAudio(){
+    actx = new AudioCtx();
+    masterGain = actx.createGain();
+    masterGain.gain.value = 0.0001;
+    filterNode = actx.createBiquadFilter();
+    filterNode.type = 'lowpass';
+    filterNode.frequency.value = 4000;
+    filterNode.Q.value = 0.7;
+    compressor = actx.createDynamicsCompressor();
+
+    masterGain.connect(filterNode);
+    filterNode.connect(compressor);
+    compressor.connect(actx.destination);
+  }
+
+  function voiceParams(voiceType){
+    switch(voiceType){
+      case 'bright': return {type:'sawtooth', attack:0.01, release:0.25, gain:0.18, detune:6};
+      case 'pluck':  return {type:'square',   attack:0.002, release:0.35, gain:0.14, detune:0};
+      case 'pad':    return {type:'sine',     attack:0.25, release:0.9,  gain:0.22, detune:3};
+      default:       return {type:'triangle', attack:0.03, release:0.4, gain:0.20, detune:2}; // warm
+    }
+  }
+
+  function setChordNotes(midiNotes, voiceType){
+    if(!actx) return;
+    const now = actx.currentTime;
+    const wantedIds = midiNotes.map(m=>Math.round(m));
+    const p = voiceParams(voiceType);
+
+    // stop voices no longer needed
+    Object.keys(voices).forEach(id=>{
+      if(!wantedIds.includes(Number(id))){
+        const v = voices[id];
+        v.gain.gain.cancelScheduledValues(now);
+        v.gain.gain.setTargetAtTime(0.0001, now, p.release);
+        setTimeout(()=>{ try{ v.osc.stop(); v.osc.disconnect(); v.gain.disconnect(); }catch(e){} }, (p.release*1000)+250);
+        delete voices[id];
+      }
+    });
+
+    // add new voices
+    wantedIds.slice(0, MAX_VOICES).forEach(id=>{
+      if(voices[id]) return;
+      const osc = actx.createOscillator();
+      osc.type = p.type;
+      osc.frequency.value = midiToFreq(id);
+      osc.detune.value = (Math.random()*2-1)*p.detune;
+      const g = actx.createGain();
+      g.gain.value = 0.0001;
+      osc.connect(g);
+      g.connect(masterGain);
+      osc.start();
+      g.gain.setTargetAtTime(p.gain, now, p.attack);
+      voices[id] = {osc, gain:g};
+    });
+  }
+
+  function setMasterVolume(v){
+    if(!actx) return;
+    const now = actx.currentTime;
+    masterGain.gain.setTargetAtTime(Math.max(0.0001, v*0.9), now, 0.05);
+  }
+  function setFilterAmount(v){
+    if(!actx) return;
+    const now = actx.currentTime;
+    const freq = 150 + Math.pow(v,1.4) * 7000;
+    filterNode.frequency.setTargetAtTime(freq, now, 0.05);
+  }
+
+  /* ---------------- Hand analysis helpers ---------------- */
+  const FINGER_TIPS = [4,8,12,16,20];
+  const FINGER_PIPS = [3,6,10,14,18];
+
+  function countExtendedFingers(landmarks, handedLabel){
+    // handedLabel: 'Left' or 'Right' as reported by MediaPipe (mirrored video, so this matches screen side after our flip)
+    let count = 0;
+    const extended = [false,false,false,false,false];
+    // Thumb: compare x of tip vs ip, direction depends on hand
+    const thumbTip = landmarks[4], thumbIp = landmarks[3];
+    const isRight = handedLabel === 'Right';
+    const thumbOut = isRight ? (thumbTip.x < thumbIp.x) : (thumbTip.x > thumbIp.x);
+    extended[0] = thumbOut;
+    for(let i=1;i<5;i++){
+      const tip = landmarks[FINGER_TIPS[i]];
+      const pip = landmarks[FINGER_PIPS[i]];
+      extended[i] = tip.y < pip.y - 0.02;
+    }
+    count = extended.filter(Boolean).length;
+    return {count, extended};
+  }
+
+  function handTilt(landmarks){
+    // vector from wrist(0) to middle finger MCP(9); angle from vertical
+    const wrist = landmarks[0], mid = landmarks[9];
+    const dx = mid.x - wrist.x, dy = mid.y - wrist.y;
+    const angle = Math.atan2(dx, -dy); // 0 = straight up
+    return angle; // radians, negative = tilt one way, positive other
+  }
+
+  function handHeight(landmarks){
+    // 0 (bottom of frame) .. 1 (top of frame)
+    return 1 - landmarks[0].y;
+  }
+
+  /* ---------------- MediaPipe wiring ---------------- */
+  const videoEl = document.getElementById('video');
+  const overlay = document.getElementById('overlay');
+  const octx = overlay.getContext('2d');
+  const hud = document.getElementById('hud');
+  const hctx = hud.getContext('2d');
+
+  function resizeCanvases(){
+    [overlay, hud].forEach(c=>{
+      c.width = window.innerWidth;
+      c.height = window.innerHeight;
+    });
+  }
+  window.addEventListener('resize', resizeCanvases);
+  resizeCanvases();
+
+  let leftState = null, rightState = null;
+  let smoothedVol = 0, smoothedFilt = 0, smoothedOct = 4;
+
+  function drawHandDots(landmarks, color){
+    octx.fillStyle = color;
+    octx.strokeStyle = color;
+    octx.lineWidth = 2;
+    const w = overlay.width, h = overlay.height;
+    const CONNECTIONS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
+      [9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+    CONNECTIONS.forEach(([a,b])=>{
+      octx.beginPath();
+      octx.moveTo(landmarks[a].x*w, landmarks[a].y*h);
+      octx.lineTo(landmarks[b].x*w, landmarks[b].y*h);
+      octx.stroke();
+    });
+    landmarks.forEach(pt=>{
+      octx.beginPath();
+      octx.arc(pt.x*w, pt.y*h, 4, 0, Math.PI*2);
+      octx.fill();
+    });
+  }
+
+  const chordLabelEl = document.getElementById('chordLabel');
+  const volBar = document.getElementById('volBar');
+  const volVal = document.getElementById('volVal');
+  const filtBar = document.getElementById('filtBar');
+  const filtVal = document.getElementById('filtVal');
+  const octBar = document.getElementById('octBar');
+  const octVal = document.getElementById('octVal');
+  const statusPill = document.getElementById('statusPill');
+  const statusText = document.getElementById('statusText');
+
+  const DEGREE_NAMES = ['I','II','III','IV','V','VI','VII'];
+  const QUALITY_NAMES = ['Root','1st Inv','7th','Dom/Dim 7th'];
+
+  function onResults(results){
+    octx.clearRect(0,0,overlay.width, overlay.height);
+    leftState = null; rightState = null;
+
+    if(results.multiHandLandmarks && results.multiHandedness){
+      results.multiHandLandmarks.forEach((lm, i)=>{
+        const label = results.multiHandedness[i].label; // 'Left' or 'Right' (already accounts for mirrored selfie view)
+        const info = countExtendedFingers(lm, label);
+        const tilt = handTilt(lm);
+        const height = handHeight(lm);
+        const state = {landmarks:lm, ...info, tilt, height};
+        if(label === 'Left'){ leftState = state; drawHandDots(lm, 'rgba(255,47,179,0.9)'); }
+        else { rightState = state; drawHandDots(lm, 'rgba(255,180,230,0.9)'); }
+      });
+    }
+
+    if(leftState && rightState){
+      statusPill.classList.add('ready');
+      statusText.textContent = 'Tracking both hands';
+
+      const root = Number(keySelect.value);
+      const voiceType = document.getElementById('voiceSelect').value;
+
+      // Left hand: mode from tilt, degree from finger pattern
+      const mode = leftState.tilt > 0.15 ? 'major' : (leftState.tilt < -0.15 ? 'minor' : (leftState.tilt >= 0 ? 'major':'minor'));
+      let degreeIndex;
+      const ext = leftState.extended;
+      if(ext[1] && ext[4] && ext[0] && !ext[2] && !ext[3]) degreeIndex = 6; // index+pinky+thumb -> VII
+      else if(ext[1] && ext[4] && !ext[0] && !ext[2] && !ext[3]) degreeIndex = 5; // index+pinky -> VI
+      else degreeIndex = Math.max(0, Math.min(4, leftState.count - 1)); // 1-5 fingers -> I..V
+
+      // Right hand: chord quality from finger count, octave from thumb, filter from tilt, volume from height
+      const qualityIdx = Math.max(0, Math.min(3, rightState.count - 1));
+      const thumbOut = rightState.extended[0];
+      const octave = thumbOut ? 3 : 5; // thumb out -> lower octave, thumb in -> higher
+      smoothedOct += ((octave)-smoothedOct)*0.15;
+
+      const rootSemitone = scaleDegreeToSemitone(root, degreeIndex, mode);
+      const rootMidi = NOTE_TO_MIDI_BASE + rootSemitone + (Math.round(smoothedOct)-4)*12;
+
+      const steps = mode==='major'? MAJOR_STEPS : MINOR_STEPS;
+      function degreeSemitone(offset){
+        return scaleDegreeToSemitone(root, degreeIndex+offset, mode) - scaleDegreeToSemitone(root, degreeIndex, mode);
+      }
+      let intervals;
+      switch(qualityIdx){
+        case 0: intervals = [0, degreeSemitone(2), degreeSemitone(4)]; break; // root position triad
+        case 1: intervals = [degreeSemitone(2)-12, degreeSemitone(4)-12, 0]; break; // 1st inversion-ish voicing
+        case 2: intervals = [0, degreeSemitone(2), degreeSemitone(4), degreeSemitone(6)]; break; // add 7th
+        default: intervals = [0, degreeSemitone(2), degreeSemitone(4)-1, degreeSemitone(6)-1]; break; // dom/dim flavor
+      }
+      const chordMidi = intervals.map(iv=> rootMidi + iv);
+
+      // filter from right tilt (-0.6..0.6 -> 0..1)
+      const filtRaw = Math.max(0, Math.min(1, (rightState.tilt + 0.6)/1.2));
+      smoothedFilt += (filtRaw - smoothedFilt)*0.2;
+
+      // volume from right hand height (0..1)
+      const volRaw = Math.max(0, Math.min(1, (rightState.height - 0.15)/0.7));
+      smoothedVol += (volRaw - smoothedVol)*0.25;
+
+      if(actx){
+        setChordNotes(chordMidi, voiceType);
+        setMasterVolume(smoothedVol);
+        setFilterAmount(smoothedFilt);
+      }
+
+      const rootName = NOTE_NAMES[((root)+((rootSemitone%12)+12))%12].split('/')[0];
+      chordLabelEl.textContent = `${DEGREE_NAMES[degreeIndex%7]} · ${mode==='major'?'Maj':'Min'} · ${QUALITY_NAMES[qualityIdx]}`;
+      chordLabelEl.classList.add('show');
+
+      volBar.style.width = (smoothedVol*100).toFixed(0)+'%';
+      volVal.textContent = (smoothedVol*100).toFixed(0)+'%';
+      filtBar.style.width = (smoothedFilt*100).toFixed(0)+'%';
+      filtVal.textContent = (smoothedFilt*100).toFixed(0)+'%';
+      const octDisplay = Math.round(smoothedOct);
+      octBar.style.width = (((octDisplay-2)/4)*100).toFixed(0)+'%';
+      octVal.textContent = octDisplay;
+
+    } else {
+      statusPill.classList.remove('ready');
+      statusText.textContent = results.multiHandLandmarks && results.multiHandLandmarks.length
+        ? 'Show both hands to play'
+        : 'Waiting for your hands…';
+      chordLabelEl.classList.remove('show');
+      smoothedVol += (0 - smoothedVol)*0.15;
+      setMasterVolume(smoothedVol);
+      volBar.style.width = (smoothedVol*100).toFixed(0)+'%';
+      volVal.textContent = (smoothedVol*100).toFixed(0)+'%';
+    }
+  }
+
+  let hands, camera;
+  function startTracking(){
+    hands = new Hands({locateFile:(file)=> `https://cdnjs.cloudflare.com/ajax/libs/mediapipe/0.4.1633559619/${file}`});
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6
+    });
+    hands.onResults(onResults);
+
+    camera = new Camera(videoEl, {
+      onFrame: async () => { await hands.send({image: videoEl}); },
+      width: 960, height: 720
+    });
+    camera.start();
+  }
+
+  /* ---------------- Start / Guide UI ---------------- */
+  const startScreen = document.getElementById('startScreen');
+  const startBtn = document.getElementById('startBtn');
+  const guide = document.getElementById('guide');
+  document.getElementById('guideOpenBtn').addEventListener('click', ()=> guide.classList.add('show'));
+  document.getElementById('guideBtn2').addEventListener('click', ()=> guide.classList.add('show'));
+  document.getElementById('closeGuideBtn').addEventListener('click', ()=> guide.classList.remove('show'));
+
+  startBtn.addEventListener('click', async ()=>{
+    try{
+      initAudio();
+      await actx.resume();
+      startScreen.style.display = 'none';
+      startTracking();
+    }catch(err){
+      statusText.textContent = 'Camera/audio permission needed';
+      console.error(err);
+    }
+  });
+})();
+</script>
+</body>
+</html>
